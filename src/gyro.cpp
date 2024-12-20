@@ -1,84 +1,86 @@
 #include <mbed.h>
-#include "gyro.h"
+#include "gyro.h" // changed from "gyro.h" to match the updated header
 #include "constants.h"
 
-SPI gyroscope(PF_9, PF_8, PF_7); // mosi, miso, sclk
-DigitalOut cs(PC_1);
+SPI rotation_sensor_spi(PF_9, PF_8, PF_7); // mosi, miso, sclk
+DigitalOut cs_line(PC_1);
 
-int16_t x_threshold; // X-axis calibration threshold
-int16_t y_threshold; // Y-axis calibration threshold
-int16_t z_threshold; // Z-axis calibration threshold
+// Axis calibration thresholds
+int16_t x_axis_threshold; 
+int16_t y_axis_threshold; 
+int16_t z_axis_threshold; 
 
-int16_t x_sample; // X-axis zero-rate level sample
-int16_t y_sample; // Y-axis zero-rate level sample
-int16_t z_sample; // Z-axis zero-rate level sample
+// Axis zero-rate samples
+int16_t x_axis_sample; 
+int16_t y_axis_sample; 
+int16_t z_axis_sample; 
 
 float sensitivity = 0.0f;
 
-Gyroscope_RawData *gyro_raw;
+RotationSensor_RawValues *rotation_values; // pointer to hold raw sensor data
 
-// Write I/O
-void WriteByte(uint8_t address, uint8_t data)
+// Write a single byte to the rotation sensor
+void Transmitter_WriteByte(uint8_t address, uint8_t data)
 {
-  cs = 0;
-  gyroscope.write(address);
-  gyroscope.write(data);
-  cs = 1;
+  cs_line = 0;
+  rotation_sensor_spi.write(address);
+  rotation_sensor_spi.write(data);
+  cs_line = 1;
 }
 
-// Get raw data from gyroscope
-void GetGyroValue(Gyroscope_RawData *rawdata)
+// Retrieve raw rotation data from the sensor
+void RetrieveRotationData(RotationSensor_RawValues *rawdata)
 {
-  cs = 0;
-  // Using renamed register for X-axis low byte, and preserving SPI read flags
-  gyroscope.write(X_AXIS_LOW_DATA_REG | 0x80 | 0x40); // auto-incremented read
-  rawdata->x_raw = gyroscope.write(0xff) | (gyroscope.write(0xff) << 8);
-  rawdata->y_raw = gyroscope.write(0xff) | (gyroscope.write(0xff) << 8);
-  rawdata->z_raw = gyroscope.write(0xff) | (gyroscope.write(0xff) << 8);
-  cs = 1;
+  cs_line = 0;
+  // Using renamed register for X-axis low byte, preserving SPI read flags
+  rotation_sensor_spi.write(X_AXIS_LOW_DATA_REG | 0x80 | 0x40); // auto-increment read
+  rawdata->x_axis_value = rotation_sensor_spi.write(0xff) | (rotation_sensor_spi.write(0xff) << 8);
+  rawdata->y_axis_value = rotation_sensor_spi.write(0xff) | (rotation_sensor_spi.write(0xff) << 8);
+  rawdata->z_axis_value = rotation_sensor_spi.write(0xff) | (rotation_sensor_spi.write(0xff) << 8);
+  cs_line = 1;
 }
 
-// Calibrate gyroscope before recording
-void CalibrateGyroscope(Gyroscope_RawData *rawdata)
+// Execute a calibration routine on the rotation sensor
+void CalibrateRotationSensor(RotationSensor_RawValues *rawdata)
 {
   int16_t sumX = 0;
   int16_t sumY = 0;
   int16_t sumZ = 0;
-  printf("========[Calibrating...]========\r\n");
+  printf("========[Calibrating rotation sensor...]========\r\n");
   for (int i = 0; i < 128; i++)
   {
-    GetGyroValue(rawdata);
-    sumX += rawdata->x_raw;
-    sumY += rawdata->y_raw;
-    sumZ += rawdata->z_raw;
-    x_threshold = max(x_threshold, rawdata->x_raw);
-    y_threshold = max(y_threshold, rawdata->y_raw);
-    z_threshold = max(z_threshold, rawdata->z_raw);
+    RetrieveRotationData(rawdata);
+    sumX += rawdata->x_axis_value;
+    sumY += rawdata->y_axis_value;
+    sumZ += rawdata->z_axis_value;
+    x_axis_threshold = max(x_axis_threshold, rawdata->x_axis_value);
+    y_axis_threshold = max(y_axis_threshold, rawdata->y_axis_value);
+    z_axis_threshold = max(z_axis_threshold, rawdata->z_axis_value);
     wait_us(10000);
   }
 
-  x_sample = sumX >> 7; // 128 is 2^7
-  y_sample = sumY >> 7;
-  z_sample = sumZ >> 7;
-  printf("========[Calibration finish.]========\r\n");
+  x_axis_sample = sumX >> 7; // 128 is 2^7
+  y_axis_sample = sumY >> 7;
+  z_axis_sample = sumZ >> 7;
+  printf("========[Calibration complete.]========\r\n");
 }
 
-// Initiate gyroscope, set up control registers
-void InitiateGyroscope(Gyroscope_Init_Parameters *init_parameters, Gyroscope_RawData *init_raw_data)
+// Initialize the rotation sensor with given parameters
+void InitializeRotationSensor(RotationSensor_Init_Params *init_parameters, RotationSensor_RawValues *init_raw_data)
 {
-  printf("\r\n========[Initializing gyroscope...]========\r\n");
-  gyro_raw = init_raw_data;
-  cs = 1;
-  // set up gyroscope
-  gyroscope.format(8, 3);       // 8 bits per SPI frame; polarity 1, phase 0
-  gyroscope.frequency(1000000); // 1 MHz SPI clock frequency
+  printf("\r\n========[Initializing rotation sensor...]========\r\n");
+  rotation_values = init_raw_data;
+  cs_line = 1;
+  // set up rotation sensor
+  rotation_sensor_spi.format(8, 3);       // 8 bits per SPI frame; polarity 1, phase 0
+  rotation_sensor_spi.frequency(1000000); // 1 MHz SPI clock frequency
 
-  // Replace old register names with the newly defined ones
-  WriteByte(ODR_BW_CTRL_REG, init_parameters->conf1 | DEVICE_POWER_ON); // set ODR, enable axes
-  WriteByte(INTERRUPT_CTRL_REG, init_parameters->conf3);                // DRDY enable
-  WriteByte(DATA_FORMAT_CTRL_REG, init_parameters->conf4);              // Full-scale range, data format
+  // Configure sensor registers using the updated structure fields
+  Transmitter_WriteByte(ODR_BW_CTRL_REG, init_parameters->sampling_rate_conf | DEVICE_POWER_ON); 
+  Transmitter_WriteByte(INTERRUPT_CTRL_REG, init_parameters->irq_conf);                      
+  Transmitter_WriteByte(DATA_FORMAT_CTRL_REG, init_parameters->scale_conf);                  
 
-  switch (init_parameters->conf4)
+  switch (init_parameters->scale_conf)
   {
     case FULL_SCALE_245_DPS:
       sensitivity = SENSITIVITY_245_DPS_PER_DIGIT;
@@ -97,58 +99,57 @@ void InitiateGyroscope(Gyroscope_Init_Parameters *init_parameters, Gyroscope_Raw
       break;
   }
 
-  CalibrateGyroscope(gyro_raw); 
-  printf("========[Initiation finish.]========\r\n");
+  CalibrateRotationSensor(rotation_values); 
+  printf("========[Initialization complete.]========\r\n");
 }
 
-// convert raw data to dps
-float ConvertToDPS(int16_t axis_data)
+// Convert raw data to degrees per second
+float RawToDPS(int16_t axis_data)
 {
   float dps = axis_data * sensitivity;
   return dps;
 }
 
-// convert dps to linear velocity
-float ConvertToVelocity(int16_t axis_data)
+// Convert degrees per second to linear velocity (m/s)
+float DPSToLinearVelocity(int16_t axis_data)
 {
-  // Replace old constants with new ones
-  float velocity = axis_data * sensitivity * DEGREES_TO_RADIANS * MOUNT_POSITION_LEG;
+  float velocity = axis_data * sensitivity * DEGREES_TO_RADIANS * MOUNT_POSITION;
   return velocity;
 }
 
-// Calculate distance from raw data array
-float GetDistance(int16_t arr[])
+// Compute total travel distance from an array of raw values
+float ComputeTravelDistance(int16_t arr[])
 {
   float distance = 0.00f;
   for (int i = 0; i < 400; i++)
   {
-    float v = ConvertToVelocity(arr[i]);
+    float v = DPSToLinearVelocity(arr[i]);
     distance += fabsf(v * 0.05f);
   }
   return distance;
 }
 
-// convert raw data to calibrated data directly
-void GetCalibratedRawData()
+// Retrieve calibrated rotation data
+void FetchCalibratedRotationData()
 {
-  GetGyroValue(gyro_raw);
+  RetrieveRotationData(rotation_values);
 
-  // offset the zero rate level
-  gyro_raw->x_raw -= x_sample;
-  gyro_raw->y_raw -= y_sample;
-  gyro_raw->z_raw -= z_sample;
+  // Offset the zero rate level
+  rotation_values->x_axis_value -= x_axis_sample;
+  rotation_values->y_axis_value -= y_axis_sample;
+  rotation_values->z_axis_value -= z_axis_sample;
 
-  // apply threshold filtering
-  if (abs(gyro_raw->x_raw) < abs(x_threshold))
-    gyro_raw->x_raw = 0;
-  if (abs(gyro_raw->y_raw) < abs(y_threshold))
-    gyro_raw->y_raw = 0;
-  if (abs(gyro_raw->z_raw) < abs(z_threshold))
-    gyro_raw->z_raw = 0;
+  // Apply threshold filtering
+  if (abs(rotation_values->x_axis_value) < abs(x_axis_threshold))
+    rotation_values->x_axis_value = 0;
+  if (abs(rotation_values->y_axis_value) < abs(y_axis_threshold))
+    rotation_values->y_axis_value = 0;
+  if (abs(rotation_values->z_axis_value) < abs(z_axis_threshold))
+    rotation_values->z_axis_value = 0;
 }
 
-// turn off the gyroscope
-void PowerOff()
+// Turn off the rotation sensor
+void DeactivateSensor()
 {
-  WriteByte(ODR_BW_CTRL_REG, 0x00);
+  Transmitter_WriteByte(ODR_BW_CTRL_REG, 0x00);
 }

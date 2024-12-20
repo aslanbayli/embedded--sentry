@@ -75,10 +75,10 @@
 #define INT2_DATA_READY         0x08 // Data-ready signal on DRDY/INT2 pin
 
 // Full-scale range selections
-#define FULL_SCALE_245_DPS      0x00 // ±245 dps
-#define FULL_SCALE_500_DPS      0x10 // ±500 dps
-#define FULL_SCALE_2000_DPS     0x20 // ±2000 dps (primary)
-#define FULL_SCALE_2000_DPS_ALT 0x30 // ±2000 dps (alternate configuration)
+#define FULL_SCALE_245_DPS      0x00 // 245 dps
+#define FULL_SCALE_500_DPS      0x10 // 500 dps
+#define FULL_SCALE_2000_DPS     0x20 // 2000 dps (primary)
+#define FULL_SCALE_2000_DPS_ALT 0x30 // 2000 dps (alternate configuration)
 
 // Sensitivities in dps/digit
 #define SENSITIVITY_245_DPS_PER_DIGIT  0.00875f
@@ -86,8 +86,8 @@
 #define SENSITIVITY_2000_DPS_PER_DIGIT 0.07f
 
 // Conversion and placement parameters
-#define MOUNT_POSITION_LEG       1       // Device mounted on leg, approximately 0.8m above ground
-#define DEGREES_TO_RADIANS       0.0175f // Conversion factor for degrees to radians (π/180 ≈ 0.017453)
+#define MOUNT_POSITION           1       
+#define DEGREES_TO_RADIANS       0.0175f // Conversion factor for degrees to radians
 
 // Power management states
 #define DEVICE_POWER_ON          0x0F // Power on the gyroscope
