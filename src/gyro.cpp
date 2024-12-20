@@ -1,154 +1,154 @@
 #include <mbed.h>
 #include "gyro.h"
+#include "constants.h"
 
-// SPI interface to gyro (using different naming)
-SPI spiGyro(PF_9, PF_8, PF_7); // MOSI, MISO, SCLK lines for gyro
-DigitalOut chipSelect(PC_1);   // Chip select for gyro
+SPI gyroscope(PF_9, PF_8, PF_7); // mosi, miso, sclk
+DigitalOut cs(PC_1);
 
-// Calibration parameters
-int16_t xCalibThreshold; 
-int16_t yCalibThreshold; 
-int16_t zCalibThreshold;
+int16_t x_threshold; // X-axis calibration threshold
+int16_t y_threshold; // Y-axis calibration threshold
+int16_t z_threshold; // Z-axis calibration threshold
 
-// Zero-offset reference samples
-int16_t xZeroSample; 
-int16_t yZeroSample; 
-int16_t zZeroSample;
+int16_t x_sample; // X-axis zero-rate level sample
+int16_t y_sample; // Y-axis zero-rate level sample
+int16_t z_sample; // Z-axis zero-rate level sample
 
-// Sensitivity factor (dynamic based on config)
-float angularSensitivity = 0.0f;
+float sensitivity = 0.0f;
 
-// Raw data pointer for global usage
-GyrRawData *globalRawDataPtr;
+Gyroscope_RawData *gyro_raw;
 
-// Send a byte+data over SPI and control chip select line
-static void SpiWriteByte(uint8_t addr, uint8_t val) {
-    chipSelect = 0;
-    spiGyro.write(addr);
-    spiGyro.write(val);
-    chipSelect = 1;
+// Write I/O
+void WriteByte(uint8_t address, uint8_t data)
+{
+  cs = 0;
+  gyroscope.write(address);
+  gyroscope.write(data);
+  cs = 1;
 }
 
-// Read raw gyro registers into a structure
-// This routine assumes continuous read mode with auto-incremented address
-static void ReadGyroRawData(GyrRawData *rawPtr) {
-    chipSelect = 0;
-    spiGyro.write((OUT_X_L | 0x80 | 0x40));
-    int16_t xLow = spiGyro.write(0xff);
-    int16_t xHigh = spiGyro.write(0xff);
-    int16_t yLow = spiGyro.write(0xff);
-    int16_t yHigh = spiGyro.write(0xff);
-    int16_t zLow = spiGyro.write(0xff);
-    int16_t zHigh = spiGyro.write(0xff);
-    chipSelect = 1;
-
-    rawPtr->x_raw = (xHigh << 8) | xLow;
-    rawPtr->y_raw = (yHigh << 8) | yLow;
-    rawPtr->z_raw = (zHigh << 8) | zLow;
+// Get raw data from gyroscope
+void GetGyroValue(Gyroscope_RawData *rawdata)
+{
+  cs = 0;
+  // Using renamed register for X-axis low byte, and preserving SPI read flags
+  gyroscope.write(X_AXIS_LOW_DATA_REG | 0x80 | 0x40); // auto-incremented read
+  rawdata->x_raw = gyroscope.write(0xff) | (gyroscope.write(0xff) << 8);
+  rawdata->y_raw = gyroscope.write(0xff) | (gyroscope.write(0xff) << 8);
+  rawdata->z_raw = gyroscope.write(0xff) | (gyroscope.write(0xff) << 8);
+  cs = 1;
 }
 
-// Perform a gyro calibration routine to establish zero-level and thresholds
-// This measures multiple samples and sets "no movement" reference points
-static void CalibrateGyro(GyrRawData *rawPtr) {
-    int16_t accumX = 0;
-    int16_t accumY = 0;
-    int16_t accumZ = 0;
+// Calibrate gyroscope before recording
+void CalibrateGyroscope(Gyroscope_RawData *rawdata)
+{
+  int16_t sumX = 0;
+  int16_t sumY = 0;
+  int16_t sumZ = 0;
+  printf("========[Calibrating...]========\r\n");
+  for (int i = 0; i < 128; i++)
+  {
+    GetGyroValue(rawdata);
+    sumX += rawdata->x_raw;
+    sumY += rawdata->y_raw;
+    sumZ += rawdata->z_raw;
+    x_threshold = max(x_threshold, rawdata->x_raw);
+    y_threshold = max(y_threshold, rawdata->y_raw);
+    z_threshold = max(z_threshold, rawdata->z_raw);
+    wait_us(10000);
+  }
 
-    // Measure multiple readings to find stable zero offsets and thresholds
-    for (int idx = 0; idx < 128; idx++) {
-        ReadGyroRawData(rawPtr);
-        accumX += rawPtr->x_raw;
-        accumY += rawPtr->y_raw;
-        accumZ += rawPtr->z_raw;
-
-        if (abs(rawPtr->x_raw) > abs(xCalibThreshold)) { xCalibThreshold = rawPtr->x_raw; }
-        if (abs(rawPtr->y_raw) > abs(yCalibThreshold)) { yCalibThreshold = rawPtr->y_raw; }
-        if (abs(rawPtr->z_raw) > abs(zCalibThreshold)) { zCalibThreshold = rawPtr->z_raw; }
-
-        // Wait between samples
-        wait_us(10000);
-    }
-
-    // Compute average zero offsets
-    xZeroSample = accumX >> 7; // division by 128 (2^7)
-    yZeroSample = accumY >> 7;
-    zZeroSample = accumZ >> 7;
+  x_sample = sumX >> 7; // 128 is 2^7
+  y_sample = sumY >> 7;
+  z_sample = sumZ >> 7;
+  printf("========[Calibration finish.]========\r\n");
 }
 
-// Initialize gyro: configure SPI, sensitivity, power and run calibration
-void SetupGyroscope(Gyroscope_Init_Parameters *config, GyrRawData *rawInitPtr) {
-    globalRawDataPtr = rawInitPtr;
+// Initiate gyroscope, set up control registers
+void InitiateGyroscope(Gyroscope_Init_Parameters *init_parameters, Gyroscope_RawData *init_raw_data)
+{
+  printf("\r\n========[Initializing gyroscope...]========\r\n");
+  gyro_raw = init_raw_data;
+  cs = 1;
+  // set up gyroscope
+  gyroscope.format(8, 3);       // 8 bits per SPI frame; polarity 1, phase 0
+  gyroscope.frequency(1000000); // 1 MHz SPI clock frequency
 
-    chipSelect = 1;
-    // Set SPI format and frequency according to spec
-    spiGyro.format(8, 3);     
-    spiGyro.frequency(1000000); 
+  // Replace old register names with the newly defined ones
+  WriteByte(ODR_BW_CTRL_REG, init_parameters->conf1 | DEVICE_POWER_ON); // set ODR, enable axes
+  WriteByte(INTERRUPT_CTRL_REG, init_parameters->conf3);                // DRDY enable
+  WriteByte(DATA_FORMAT_CTRL_REG, init_parameters->conf4);              // Full-scale range, data format
 
-    // Write configuration registers
-    SpiWriteByte(CTRL_REG_1, (config->conf1 | POWERON)); // Power on and axes enabling
-    SpiWriteByte(CTRL_REG_3, config->conf3);             // DRDY enable if needed
-    SpiWriteByte(CTRL_REG_4, config->conf4);             // Set full-scale selection
+  switch (init_parameters->conf4)
+  {
+    case FULL_SCALE_245_DPS:
+      sensitivity = SENSITIVITY_245_DPS_PER_DIGIT;
+      break;
 
-    // Determine sensitivity based on full-scale selection
-    switch (config->conf4) {
-        case FULL_SCALE_245:
-            angularSensitivity = SENSITIVITY_245;
-            break;
-        case FULL_SCALE_500:
-            angularSensitivity = SENSITIVITY_500;
-            break;
-        case FULL_SCALE_2000:
-        case FULL_SCALE_2000_ALT:
-            angularSensitivity = SENSITIVITY_2000;
-            break;
-        default:
-            angularSensitivity = SENSITIVITY_245; // fallback
-            break;
-    }
+    case FULL_SCALE_500_DPS:
+      sensitivity = SENSITIVITY_500_DPS_PER_DIGIT;
+      break;
 
-    // Run calibration after setup
-    CalibrateGyro(globalRawDataPtr);
+    case FULL_SCALE_2000_DPS:
+      sensitivity = SENSITIVITY_2000_DPS_PER_DIGIT;
+      break;
+
+    case FULL_SCALE_2000_DPS_ALT:
+      sensitivity = SENSITIVITY_2000_DPS_PER_DIGIT;
+      break;
+  }
+
+  CalibrateGyroscope(gyro_raw); 
+  printf("========[Initiation finish.]========\r\n");
 }
 
-// Convert a raw axis value to degrees per second using current sensitivity
-float RawToDps(int16_t rawVal) {
-    return (float)rawVal * angularSensitivity;
+// convert raw data to dps
+float ConvertToDPS(int16_t axis_data)
+{
+  float dps = axis_data * sensitivity;
+  return dps;
 }
 
-// Convert a raw axis value directly to linear velocity (assuming known constants)
-float DpsToVelocity(int16_t rawVal) {
-    // Combine raw val, sensitivity, conversion from degrees to radians, and a predefined scale
-    float velocity = (float)rawVal * angularSensitivity * DEGREE_TO_RAD * MY_LEG;
-    return velocity;
+// convert dps to linear velocity
+float ConvertToVelocity(int16_t axis_data)
+{
+  // Replace old constants with new ones
+  float velocity = axis_data * sensitivity * DEGREES_TO_RADIANS * MOUNT_POSITION_LEG;
+  return velocity;
 }
 
-// Compute total traveled distance from a set of raw samples 
-// (assuming each sample is taken at intervals that allow a 0.05f time step)
-float ComputeDistance(int16_t sampleArray[]) {
-    float totalDist = 0.0f;
-    for (int i = 0; i < 400; i++) {
-        float instantaneousVel = DpsToVelocity(sampleArray[i]);
-        totalDist += fabsf(instantaneousVel * 0.05f);
-    }
-    return totalDist;
+// Calculate distance from raw data array
+float GetDistance(int16_t arr[])
+{
+  float distance = 0.00f;
+  for (int i = 0; i < 400; i++)
+  {
+    float v = ConvertToVelocity(arr[i]);
+    distance += fabsf(v * 0.05f);
+  }
+  return distance;
 }
 
-// Acquire fresh gyro data, remove offset, and apply threshold to minimize noise
-void UpdateCalibratedData() {
-    ReadGyroRawData(globalRawDataPtr);
+// convert raw data to calibrated data directly
+void GetCalibratedRawData()
+{
+  GetGyroValue(gyro_raw);
 
-    // Remove zero-level offsets
-    globalRawDataPtr->x_raw -= xZeroSample;
-    globalRawDataPtr->y_raw -= yZeroSample;
-    globalRawDataPtr->z_raw -= zZeroSample;
+  // offset the zero rate level
+  gyro_raw->x_raw -= x_sample;
+  gyro_raw->y_raw -= y_sample;
+  gyro_raw->z_raw -= z_sample;
 
-    // Apply thresholds: if below threshold, set to zero
-    if (abs(globalRawDataPtr->x_raw) < abs(xCalibThreshold)) { globalRawDataPtr->x_raw = 0; }
-    if (abs(globalRawDataPtr->y_raw) < abs(yCalibThreshold)) { globalRawDataPtr->y_raw = 0; }
-    if (abs(globalRawDataPtr->z_raw) < abs(zCalibThreshold)) { globalRawDataPtr->z_raw = 0; }
+  // apply threshold filtering
+  if (abs(gyro_raw->x_raw) < abs(x_threshold))
+    gyro_raw->x_raw = 0;
+  if (abs(gyro_raw->y_raw) < abs(y_threshold))
+    gyro_raw->y_raw = 0;
+  if (abs(gyro_raw->z_raw) < abs(z_threshold))
+    gyro_raw->z_raw = 0;
 }
 
-// Shut down the gyro by writing zero to control register 1
-void DeactivateGyro() {
-    SpiWriteByte(CTRL_REG_1, 0x00);
+// turn off the gyroscope
+void PowerOff()
+{
+  WriteByte(ODR_BW_CTRL_REG, 0x00);
 }
