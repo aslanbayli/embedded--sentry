@@ -14,67 +14,36 @@
 // Event flags
 #define KEY_FLAG 1
 #define UNLOCK_FLAG 2
-#define ERASE_FLAG 4
 #define DATA_READY_FLAG 8
-
 // LCD font size for text display
 #define FONT_SIZE 16
-
-// Threshold for determining successful unlock; decrease if unlock is difficult (must be positive)
+// Threshold for determining successful unlock
 #define CORRELATION_THRESHOLD 0.3f
 
-InterruptIn rotIntPin(PA_2, PullDown);
-InterruptIn usrBtn(BUTTON1, PullDown);
 
+InterruptIn rotIntPin(PA_2, PullDown);
 DigitalOut greenLed(LED1);
 DigitalOut redLed(LED2);
-
 LCD_DISCO_F429ZI display;      // LCD control object
 TS_DISCO_F429ZI touchScreen;   // Touch screen control object
-
 EventFlags evtFlags; // Event flags to communicate between threads
-
 Timer sysTimer; // General-purpose timer
 
-/*******************************************************************************
- * Function Prototypes for LCD and Touch Screen Operations
- * ****************************************************************************/
+
+// Function Prototypes
 void renderButton(int x, int y, int width, int height, const char *label);
 bool checkButtonTouch(int touch_x, int touch_y, int button_x, int button_y, int button_width, int button_height);
-
-/*******************************************************************************
- * Function Prototypes for Data Processing
- * ****************************************************************************/
 float calcEuclideanDist(const array<float, 3> &a, const array<float, 3> &b);
 float calcDTW(const vector<array<float, 3>> &s, const vector<array<float, 3>> &t);
 void removeZeroData(vector<array<float, 3>> &data);
 float calcCorrelation(const vector<float> &a, const vector<float> &b);
 array<float, 3> calcCorrelationVecs(vector<array<float, 3>> &vec1, vector<array<float, 3>> &vec2);
-
-/*******************************************************************************
- * Function Prototypes for Threads
- * ****************************************************************************/
 void rotationThread();
 void touchThread();
-
-/*******************************************************************************
- * Function Prototypes for Flash Operations
- * ****************************************************************************/
 bool flashStoreRotData(vector<array<float, 3>> &gestureKey, uint32_t flash_address);
 vector<array<float, 3>> flashReadRotData(uint32_t flash_address, size_t data_size);
-
-/*******************************************************************************
- * Function Prototype for Filters
- * ****************************************************************************/
 float movAvgFilter(float input, float dispBuf[], size_t N, size_t &index, float &sum);
 
-/*******************************************************************************
- * ISR Callback Functions
- * ****************************************************************************/
-void onButtonPress() // ISR for user button press
-{
-    evtFlags.set(ERASE_FLAG);
-}
 
 // ISR for rotation sensor data-ready interrupt
 void onRotDataReady() 
@@ -82,9 +51,7 @@ void onRotDataReady()
     evtFlags.set(DATA_READY_FLAG);
 }
 
-/*******************************************************************************
- * Global Variables
- * ****************************************************************************/
+// Global Variables
 vector<array<float, 3>> gestureKey;     // Holds the recorded gesture key
 vector<array<float, 3>> unlockRecord;   // Holds the recorded attempt for unlocking
 
@@ -111,9 +78,6 @@ const char *txt1 = "LOCKED";
 
 int calcError = 0;
 
-/*******************************************************************************
- * @brief main function
- * ****************************************************************************/
 int main()
 {
     display.Clear(LCD_COLOR_BLACK);
@@ -128,7 +92,6 @@ int main()
     display.DisplayStringAt(msgX, msgY, (uint8_t *)welcomeMsg, CENTER_MODE);
 
     // Setup interrupts
-    usrBtn.rise(&onButtonPress);
     rotIntPin.rise(&onRotDataReady);
 
     // Setup initial LED and text state
@@ -160,11 +123,7 @@ int main()
     }
 }
 
-/*******************************************************************************
- *
- * @brief Thread handling rotation sensor-based gesture recording/unlocking
- *
- * ****************************************************************************/
+// Thread handling rotation sensor-based gesture recording/unlocking
 void rotationThread()
 {
     // Initialize parameters for the rotation sensor
@@ -189,34 +148,7 @@ void rotationThread()
     {
         vector<array<float, 3>> tempKey; // Temporary storage of recorded data
 
-        auto eventReceived = evtFlags.wait_any(KEY_FLAG | UNLOCK_FLAG | ERASE_FLAG);
-
-        if (eventReceived & ERASE_FLAG)
-        {
-            // Erasing the stored key and any unlock attempt data
-            sprintf(dispBuf, "Erasing key...");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            gestureKey.clear();
-            
-            sprintf(dispBuf, "Key erased.");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            unlockRecord.clear();
-
-            // Update LEDs and status
-            greenLed = 1;
-            redLed = 0;
-            sprintf(dispBuf, "All data cleared.");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-        }
+        auto eventReceived = evtFlags.wait_any(KEY_FLAG | UNLOCK_FLAG);
 
         if (eventReceived & (KEY_FLAG | UNLOCK_FLAG))
         {
@@ -230,7 +162,7 @@ void rotationThread()
             ThisThread::sleep_for(1s);
 
             // Inform user about calibration
-            sprintf(dispBuf, "Calibrating sensor...");
+            sprintf(dispBuf, "Configuring...");
             display.SetTextColor(LCD_COLOR_BLACK);
             display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
             display.SetTextColor(LCD_COLOR_BLUE);
@@ -240,26 +172,26 @@ void rotationThread()
             InitializeRotationSensor(&initParams, &rawVals);
 
             // Countdown before recording starts
-            sprintf(dispBuf, "Recording in 3...");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            ThisThread::sleep_for(1s);
-            sprintf(dispBuf, "Recording in 2...");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            ThisThread::sleep_for(1s);
-            sprintf(dispBuf, "Recording in 1...");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            ThisThread::sleep_for(1s);
+            // sprintf(dispBuf, "Recording in 3...");
+            // display.SetTextColor(LCD_COLOR_BLACK);
+            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+            // display.SetTextColor(LCD_COLOR_BLUE);
+            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+            // ThisThread::sleep_for(1s);
+            // sprintf(dispBuf, "Recording in 2...");
+            // display.SetTextColor(LCD_COLOR_BLACK);
+            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+            // display.SetTextColor(LCD_COLOR_BLUE);
+            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+            // ThisThread::sleep_for(1s);
+            // sprintf(dispBuf, "Recording in 1...");
+            // display.SetTextColor(LCD_COLOR_BLACK);
+            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+            // display.SetTextColor(LCD_COLOR_BLUE);
+            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+            // ThisThread::sleep_for(1s);
 
-            sprintf(dispBuf, "Capturing data...");
+            sprintf(dispBuf, "Recording...");
             display.SetTextColor(LCD_COLOR_BLACK);
             display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
             display.SetTextColor(LCD_COLOR_BLUE);
@@ -288,7 +220,7 @@ void rotationThread()
             // Remove leading and trailing zeros from data
             removeZeroData(tempKey);
 
-            sprintf(dispBuf, "Data capture complete.");
+            sprintf(dispBuf, "Recording complete");
             display.SetTextColor(LCD_COLOR_BLACK);
             display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
             display.SetTextColor(LCD_COLOR_BLUE);
@@ -300,7 +232,7 @@ void rotationThread()
         {
             if (gestureKey.empty())
             {
-                sprintf(dispBuf, "Saving new key...");
+                sprintf(dispBuf, "Saving key...");
                 display.SetTextColor(LCD_COLOR_BLACK);
                 display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
                 display.SetTextColor(LCD_COLOR_BLUE);
@@ -314,7 +246,7 @@ void rotationThread()
                 redLed = 1;
                 greenLed = 0;
 
-                sprintf(dispBuf, "Key saved successfully.");
+                sprintf(dispBuf, "Key saved");
                 display.SetTextColor(LCD_COLOR_BLACK);
                 display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
                 display.SetTextColor(LCD_COLOR_BLUE);
@@ -329,7 +261,7 @@ void rotationThread()
                 display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
 
                 ThisThread::sleep_for(1s);
-                
+                    
                 // Clear old key and save the new one
                 gestureKey.clear();
                 gestureKey = tempKey;
@@ -351,11 +283,11 @@ void rotationThread()
         {
             evtFlags.clear(UNLOCK_FLAG);
 
-            sprintf(dispBuf, "Attempting unlock...");
-            display.SetTextColor(LCD_COLOR_BLACK);
-            display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            display.SetTextColor(LCD_COLOR_BLUE);
-            display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+            // sprintf(dispBuf, "Attempting unlock...");
+            // display.SetTextColor(LCD_COLOR_BLACK);
+            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+            // display.SetTextColor(LCD_COLOR_BLUE);
+            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
 
             unlockRecord = tempKey; 
             tempKey.clear();
@@ -373,7 +305,7 @@ void rotationThread()
                 // LEDs indicate locked state since no key is saved
                 greenLed = 1;
                 redLed = 0;
-            }
+}
             else
             {
                 int unlockCount = 0; 
@@ -409,17 +341,17 @@ void rotationThread()
 
                     unlockRecord.clear();
                     unlockCount = 0;
-                }
-                else
-                {
-                    sprintf(dispBuf, "UNLOCK FAILED");
-                    display.SetTextColor(LCD_COLOR_BLACK);
-                    display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-                    display.SetTextColor(LCD_COLOR_BLUE);
-                    display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+            }
+            else
+            {
+                sprintf(dispBuf, "UNLOCK FAILED");
+                display.SetTextColor(LCD_COLOR_BLACK);
+                display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+                display.SetTextColor(LCD_COLOR_BLUE);
+                display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
 
-                    greenLed = 0;
-                    redLed = 1;
+                greenLed = 0;
+                redLed = 1;
 
                     unlockRecord.clear();
                     unlockCount = 0;
@@ -430,11 +362,7 @@ void rotationThread()
     }
 }
 
-/*******************************************************************************
- *
- * @brief Thread handling touch screen interactions
- *
- * ****************************************************************************/
+// Thread handling touch screen interactions
 void touchThread()
 {
     TS_StateTypeDef touchState;
@@ -445,7 +373,7 @@ void touchThread()
         return;
     }
 
-    char dispBuf[50];
+    // char dispBuf[50];
 
     while (1)
     {
@@ -458,11 +386,11 @@ void touchThread()
             // Check if the touch is within the UNLOCK button area
             if (checkButtonTouch(touch_x, touch_y, btn2X, btn2Y, btn1Width, btn1Height))
             {
-                sprintf(dispBuf, "Start recording...");
-                display.SetTextColor(LCD_COLOR_BLACK);
-                display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-                display.SetTextColor(LCD_COLOR_BLUE);
-                display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+                // sprintf(dispBuf, "Start recording...");
+                // display.SetTextColor(LCD_COLOR_BLACK);
+                // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+                // display.SetTextColor(LCD_COLOR_BLUE);
+                // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
                 ThisThread::sleep_for(1s);
                 evtFlags.set(KEY_FLAG);
             }
@@ -470,11 +398,11 @@ void touchThread()
             // Check if the touch is within the RECORD button area
             if (checkButtonTouch(touch_x, touch_y, btn1X, btn1Y, btn2Width, btn2Height))
             {
-                sprintf(dispBuf, "Start unlock attempt...");
-                display.SetTextColor(LCD_COLOR_BLACK);
-                display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-                display.SetTextColor(LCD_COLOR_BLUE);
-                display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
+                // sprintf(dispBuf, "Start unlock attempt...");
+                // display.SetTextColor(LCD_COLOR_BLACK);
+                // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
+                // display.SetTextColor(LCD_COLOR_BLUE);
+                // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
                 ThisThread::sleep_for(1s);
                 evtFlags.set(UNLOCK_FLAG);
             }
@@ -483,11 +411,8 @@ void touchThread()
     }
 }
 
-/*******************************************************************************
- *
- * @brief Store rotation-based gesture data to flash memory
- *
- * ****************************************************************************/
+
+// Store rotation-based gesture data to flash memory
 bool flashStoreRotData(vector<array<float, 3>> &gestureKey, uint32_t flash_address)
 {
     FlashIAP flash;
@@ -504,11 +429,8 @@ bool flashStoreRotData(vector<array<float, 3>> &gestureKey, uint32_t flash_addre
     return (write_result == 0);
 }
 
-/*******************************************************************************
- *
- * @brief Read stored rotation-based gesture data from flash
- *
- * ****************************************************************************/
+
+// Read stored rotation-based gesture data from flash
 vector<array<float, 3>> flashReadRotData(uint32_t flash_address, size_t data_size)
 {
     vector<array<float, 3>> gestureKey(data_size);
@@ -523,11 +445,7 @@ vector<array<float, 3>> flashReadRotData(uint32_t flash_address, size_t data_siz
     return gestureKey;
 }
 
-/*******************************************************************************
- *
- * @brief Draw a rectangular button on the display
- *
- * ****************************************************************************/
+// Draw a rectangular button on the display
 void renderButton(int x, int y, int width, int height, const char *label)
 {
     display.SetTextColor(LCD_COLOR_BLUE);
@@ -535,22 +453,14 @@ void renderButton(int x, int y, int width, int height, const char *label)
     display.DisplayStringAt(x + width / 2 - strlen(label) * 19, y + height / 2 - 8, (uint8_t *)label, CENTER_MODE);
 }
 
-/*******************************************************************************
- *
- * @brief Verify if a touch point is inside a given button
- *
- * ****************************************************************************/
+// Verify if a touch point is inside a given button
 bool checkButtonTouch(int touch_x, int touch_y, int button_x, int button_y, int button_width, int button_height)
 {
     return (touch_x >= button_x && touch_x <= button_x + button_width &&
             touch_y >= button_y && touch_y <= button_y + button_height);
 }
 
-/*******************************************************************************
- *
- * @brief Compute the Euclidean distance between two 3D points
- *
- * ****************************************************************************/
+// Compute the Euclidean distance between two 3D points
 float calcEuclideanDist(const array<float, 3> &a, const array<float, 3> &b)
 {
     float sum = 0;
@@ -561,11 +471,8 @@ float calcEuclideanDist(const array<float, 3> &a, const array<float, 3> &b)
     return sqrt(sum);
 }
 
-/*******************************************************************************
- *
- * @brief Compute the DTW (Dynamic Time Warping) distance between two sequences
- *
- * ****************************************************************************/
+
+// Compute the DTW (Dynamic Time Warping) distance between two sequences
 float calcDTW(const vector<array<float, 3>> &s, const vector<array<float, 3>> &t)
 {
     vector<vector<float>> dtw_matrix(s.size() + 1, vector<float>(t.size() + 1, numeric_limits<float>::infinity()));
@@ -584,11 +491,8 @@ float calcDTW(const vector<array<float, 3>> &s, const vector<array<float, 3>> &t
     return dtw_matrix[s.size()][t.size()];
 }
 
-/*******************************************************************************
- *
- * @brief Remove leading/trailing segments of negligible rotation data
- *
- * ****************************************************************************/
+
+// Remove leading/trailing segments of negligible rotation data
 void removeZeroData(vector<array<float, 3>> &data)
 {
     float threshold = 0.00001;
@@ -622,11 +526,8 @@ void removeZeroData(vector<array<float, 3>> &data)
     }
 }
 
-/*******************************************************************************
- *
- * @brief Compute correlation between two equal-length numerical sequences
- *
- * ****************************************************************************/
+
+// Compute correlation between two equal-length numerical sequences
 float calcCorrelation(const vector<float> &a, const vector<float> &b)
 {
     if (a.size() != b.size())
@@ -654,11 +555,8 @@ float calcCorrelation(const vector<float> &a, const vector<float> &b)
     return numerator / denominator;
 }
 
-/*******************************************************************************
- *
- * @brief Calculate correlation values for x, y, z dimensions of two datasets
- *
- * ****************************************************************************/
+
+// Calculate correlation values for x, y, z dimensions of two datasets
 array<float, 3> calcCorrelationVecs(vector<array<float, 3>> &vec1, vector<array<float, 3>> &vec2)
 {
     array<float, 3> result;

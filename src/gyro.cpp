@@ -1,5 +1,5 @@
 #include <mbed.h>
-#include "gyro.h" // changed from "gyro.h" to match the updated header
+#include "gyro.h" 
 #include "constants.h"
 
 SPI rotation_sensor_spi(PF_9, PF_8, PF_7); // mosi, miso, sclk
@@ -46,7 +46,6 @@ void CalibrateRotationSensor(RotationSensor_RawValues *rawdata)
   int16_t sumX = 0;
   int16_t sumY = 0;
   int16_t sumZ = 0;
-  printf("========[Calibrating rotation sensor...]========\r\n");
   for (int i = 0; i < 128; i++)
   {
     RetrieveRotationData(rawdata);
@@ -62,13 +61,11 @@ void CalibrateRotationSensor(RotationSensor_RawValues *rawdata)
   x_axis_sample = sumX >> 7; // 128 is 2^7
   y_axis_sample = sumY >> 7;
   z_axis_sample = sumZ >> 7;
-  printf("========[Calibration complete.]========\r\n");
 }
 
 // Initialize the rotation sensor with given parameters
 void InitializeRotationSensor(RotationSensor_Init_Params *init_parameters, RotationSensor_RawValues *init_raw_data)
 {
-  printf("\r\n========[Initializing rotation sensor...]========\r\n");
   rotation_values = init_raw_data;
   cs_line = 1;
   // set up rotation sensor
@@ -100,7 +97,6 @@ void InitializeRotationSensor(RotationSensor_Init_Params *init_parameters, Rotat
   }
 
   CalibrateRotationSensor(rotation_values); 
-  printf("========[Initialization complete.]========\r\n");
 }
 
 // Convert raw data to degrees per second
