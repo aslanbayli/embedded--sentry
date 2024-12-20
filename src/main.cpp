@@ -6,7 +6,7 @@
 #include <math.h>
 
 #include "gyro.h"
-#include "gyro.h"
+#include "constants.h"
 
 #include "drivers/LCD_DISCO_F429ZI.h"
 #include "drivers/TS_DISCO_F429ZI.h"
