@@ -4,7 +4,7 @@ This is our final project for the Real-time Embedded Systems at NYU Tandon
 # Team members
 - Ali Aslanbayli (aa12947)
 - Nevin Mathews Kuruvilla (nm4709)
-- Rohan 
+- Rohan Subramaniam (rs9194) 
 
 # How to use
 - Upload this code to an STM32F429I Discovery board

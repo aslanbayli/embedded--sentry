@@ -1,5 +1,5 @@
 #include <mbed.h>
-#include "gyro.h" 
+#include "motion.h" 
 #include "constants.h"
 
 SPI rotation_sensor_spi(PF_9, PF_8, PF_7); // mosi, miso, sclk

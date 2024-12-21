@@ -5,7 +5,7 @@
 #include <cmath>
 #include <math.h>
 
-#include "gyro.h"          
+#include "motion.h"          
 #include "constants.h"
 
 #include "drivers/LCD_DISCO_F429ZI.h"
@@ -83,10 +83,13 @@ int main()
     display.Clear(LCD_COLOR_BLACK);
 
     // Draw the "RECORD" button
+    display.SetTextColor(LCD_COLOR_GREEN);
     renderButton(btn1X, btn1Y, btn1Width, btn1Height, btn1Label);
-
     // Draw the "UNLOCK" button
+    display.SetTextColor(LCD_COLOR_BLUE);
     renderButton(btn2X, btn2Y, btn2Width, btn2Height, btn2Label);
+
+    display.SetTextColor(LCD_COLOR_BLACK);
 
     // Display initial message
     display.DisplayStringAt(msgX, msgY, (uint8_t *)welcomeMsg, CENTER_MODE);
@@ -170,26 +173,6 @@ void rotationThread()
 
             // Initialize sensor for rotation measurement
             InitializeRotationSensor(&initParams, &rawVals);
-
-            // Countdown before recording starts
-            // sprintf(dispBuf, "Recording in 3...");
-            // display.SetTextColor(LCD_COLOR_BLACK);
-            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            // display.SetTextColor(LCD_COLOR_BLUE);
-            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            // ThisThread::sleep_for(1s);
-            // sprintf(dispBuf, "Recording in 2...");
-            // display.SetTextColor(LCD_COLOR_BLACK);
-            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            // display.SetTextColor(LCD_COLOR_BLUE);
-            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            // ThisThread::sleep_for(1s);
-            // sprintf(dispBuf, "Recording in 1...");
-            // display.SetTextColor(LCD_COLOR_BLACK);
-            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            // display.SetTextColor(LCD_COLOR_BLUE);
-            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-            // ThisThread::sleep_for(1s);
 
             sprintf(dispBuf, "Recording...");
             display.SetTextColor(LCD_COLOR_BLACK);
@@ -283,12 +266,6 @@ void rotationThread()
         {
             evtFlags.clear(UNLOCK_FLAG);
 
-            // sprintf(dispBuf, "Attempting unlock...");
-            // display.SetTextColor(LCD_COLOR_BLACK);
-            // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-            // display.SetTextColor(LCD_COLOR_BLUE);
-            // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
-
             unlockRecord = tempKey; 
             tempKey.clear();
 
@@ -373,7 +350,6 @@ void touchThread()
         return;
     }
 
-    // char dispBuf[50];
 
     while (1)
     {
@@ -386,11 +362,6 @@ void touchThread()
             // Check if the touch is within the UNLOCK button area
             if (checkButtonTouch(touch_x, touch_y, btn2X, btn2Y, btn1Width, btn1Height))
             {
-                // sprintf(dispBuf, "Start recording...");
-                // display.SetTextColor(LCD_COLOR_BLACK);
-                // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-                // display.SetTextColor(LCD_COLOR_BLUE);
-                // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
                 ThisThread::sleep_for(1s);
                 evtFlags.set(KEY_FLAG);
             }
@@ -398,11 +369,6 @@ void touchThread()
             // Check if the touch is within the RECORD button area
             if (checkButtonTouch(touch_x, touch_y, btn1X, btn1Y, btn2Width, btn2Height))
             {
-                // sprintf(dispBuf, "Start unlock attempt...");
-                // display.SetTextColor(LCD_COLOR_BLACK);
-                // display.FillRect(0, txtY, display.GetXSize(), FONT_SIZE);
-                // display.SetTextColor(LCD_COLOR_BLUE);
-                // display.DisplayStringAt(txtX, txtY, (uint8_t *)dispBuf, CENTER_MODE);
                 ThisThread::sleep_for(1s);
                 evtFlags.set(UNLOCK_FLAG);
             }
@@ -448,7 +414,7 @@ vector<array<float, 3>> flashReadRotData(uint32_t flash_address, size_t data_siz
 // Draw a rectangular button on the display
 void renderButton(int x, int y, int width, int height, const char *label)
 {
-    display.SetTextColor(LCD_COLOR_BLUE);
+    // display.SetTextColor(LCD_COLOR_BLUE);
     display.FillRect(x, y, width, height);
     display.DisplayStringAt(x + width / 2 - strlen(label) * 19, y + height / 2 - 8, (uint8_t *)label, CENTER_MODE);
 }
