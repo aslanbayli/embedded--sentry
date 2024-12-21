@@ -69,7 +69,7 @@ const char *btn2Label = "UNLOCK";
 
 const int msgX = 5;
 const int msgY = 30;
-const char *welcomeMsg = "GESTURE UNLOCKER";
+const char *welcomeMsg = "Armadillo Secure";
 
 const int txtX = 5;
 const int txtY = 270;
